@@ -97,71 +97,98 @@ uint8_t filterToFourWayMode(uint8_t dpad)
  * @param dpad The GamepadState.dpad value.
  * @return uint8_t The clean D-pad value.
  */
+ // 중립 감지를 위한 구조체
+struct NeutralTracker {
+	uint32_t lastInputTime = 0;
+	DpadDirection lastDirection = DIRECTION_NONE;
+	const uint32_t NEUTRAL_THRESHOLD_MS = 10; // 중립 인식 시간 (ms)
+};
+
+// 전역 중립 트래커
+static NeutralTracker upDownTracker;
+static NeutralTracker leftRightTracker;
+
 uint8_t runSOCDCleaner(SOCDMode mode, uint8_t dpad)
 {
+	// Bypass 모드일 경우 그대로 반환
 	if (mode == SOCD_MODE_BYPASS) {
 		return dpad;
 	}
 
-	static DpadDirection lastUD = DIRECTION_NONE;
-	static DpadDirection lastLR = DIRECTION_NONE;
+	uint32_t currentTime = getMillis();
 	uint8_t newDpad = 0;
 
+	// 상하 방향 처리
 	switch (dpad & (GAMEPAD_MASK_UP | GAMEPAD_MASK_DOWN))
 	{
-		case (GAMEPAD_MASK_UP | GAMEPAD_MASK_DOWN):
+	case (GAMEPAD_MASK_UP | GAMEPAD_MASK_DOWN):
+		// 빠른 연속 입력 시 중립 상태 처리
+		if (currentTime - upDownTracker.lastInputTime <= upDownTracker.NEUTRAL_THRESHOLD_MS) {
+			newDpad = 0;
+			upDownTracker.lastDirection = DIRECTION_NONE;
+		}
+		else {
+			// 기존 SOCD 로직
 			if (mode == SOCD_MODE_UP_PRIORITY)
 			{
 				newDpad |= GAMEPAD_MASK_UP;
-				lastUD = DIRECTION_UP;
+				upDownTracker.lastDirection = DIRECTION_UP;
 			}
-			else if (mode == SOCD_MODE_SECOND_INPUT_PRIORITY && lastUD != DIRECTION_NONE)
-				newDpad |= (lastUD == DIRECTION_UP) ? GAMEPAD_MASK_DOWN : GAMEPAD_MASK_UP;
-			else if (mode == SOCD_MODE_FIRST_INPUT_PRIORITY && lastUD != DIRECTION_NONE)
-				newDpad |= (lastUD == DIRECTION_UP) ? GAMEPAD_MASK_UP : GAMEPAD_MASK_DOWN;
+			else if (mode == SOCD_MODE_SECOND_INPUT_PRIORITY && upDownTracker.lastDirection != DIRECTION_NONE)
+				newDpad |= (upDownTracker.lastDirection == DIRECTION_UP) ? GAMEPAD_MASK_DOWN : GAMEPAD_MASK_UP;
+			else if (mode == SOCD_MODE_FIRST_INPUT_PRIORITY && upDownTracker.lastDirection != DIRECTION_NONE)
+				newDpad |= (upDownTracker.lastDirection == DIRECTION_UP) ? GAMEPAD_MASK_UP : GAMEPAD_MASK_DOWN;
 			else
-				lastUD = DIRECTION_NONE;
-			break;
-
-		case GAMEPAD_MASK_UP:
-			newDpad |= GAMEPAD_MASK_UP;
-			lastUD = DIRECTION_UP;
-			break;
-
-		case GAMEPAD_MASK_DOWN:
-			newDpad |= GAMEPAD_MASK_DOWN;
-			lastUD = DIRECTION_DOWN;
-			break;
-
-		default:
-			lastUD = DIRECTION_NONE;
-			break;
+				upDownTracker.lastDirection = DIRECTION_NONE;
+		}
+		break;
+	case GAMEPAD_MASK_UP:
+		newDpad |= GAMEPAD_MASK_UP;
+		upDownTracker.lastDirection = DIRECTION_UP;
+		upDownTracker.lastInputTime = currentTime;
+		break;
+	case GAMEPAD_MASK_DOWN:
+		newDpad |= GAMEPAD_MASK_DOWN;
+		upDownTracker.lastDirection = DIRECTION_DOWN;
+		upDownTracker.lastInputTime = currentTime;
+		break;
+	default:
+		upDownTracker.lastDirection = DIRECTION_NONE;
+		break;
 	}
 
+	// 좌우 방향 처리
 	switch (dpad & (GAMEPAD_MASK_LEFT | GAMEPAD_MASK_RIGHT))
 	{
-		case (GAMEPAD_MASK_LEFT | GAMEPAD_MASK_RIGHT):
-			if (mode == SOCD_MODE_SECOND_INPUT_PRIORITY && lastLR != DIRECTION_NONE)
-				newDpad |= (lastLR == DIRECTION_LEFT) ? GAMEPAD_MASK_RIGHT : GAMEPAD_MASK_LEFT;
-			else if (mode == SOCD_MODE_FIRST_INPUT_PRIORITY && lastLR != DIRECTION_NONE)
-				newDpad |= (lastLR == DIRECTION_LEFT) ? GAMEPAD_MASK_LEFT : GAMEPAD_MASK_RIGHT;
+	case (GAMEPAD_MASK_LEFT | GAMEPAD_MASK_RIGHT):
+		// 빠른 연속 입력 시 중립 상태 처리
+		if (currentTime - leftRightTracker.lastInputTime <= leftRightTracker.NEUTRAL_THRESHOLD_MS) {
+			newDpad &= ~(GAMEPAD_MASK_LEFT | GAMEPAD_MASK_RIGHT);
+			leftRightTracker.lastDirection = DIRECTION_NONE;
+		}
+		else {
+			// 기존 SOCD 로직
+			if (mode == SOCD_MODE_SECOND_INPUT_PRIORITY && leftRightTracker.lastDirection != DIRECTION_NONE)
+				newDpad |= (leftRightTracker.lastDirection == DIRECTION_LEFT) ? GAMEPAD_MASK_RIGHT : GAMEPAD_MASK_LEFT;
+			else if (mode == SOCD_MODE_FIRST_INPUT_PRIORITY && leftRightTracker.lastDirection != DIRECTION_NONE)
+				newDpad |= (leftRightTracker.lastDirection == DIRECTION_LEFT) ? GAMEPAD_MASK_LEFT : GAMEPAD_MASK_RIGHT;
 			else
-				lastLR = DIRECTION_NONE;
-			break;
-
-		case GAMEPAD_MASK_LEFT:
-			newDpad |= GAMEPAD_MASK_LEFT;
-			lastLR = DIRECTION_LEFT;
-			break;
-
-		case GAMEPAD_MASK_RIGHT:
-			newDpad |= GAMEPAD_MASK_RIGHT;
-			lastLR = DIRECTION_RIGHT;
-			break;
-
-		default:
-			lastLR = DIRECTION_NONE;
-			break;
+				leftRightTracker.lastDirection = DIRECTION_NONE;
+		}
+		break;
+	case GAMEPAD_MASK_LEFT:
+		newDpad |= GAMEPAD_MASK_LEFT;
+		leftRightTracker.lastDirection = DIRECTION_LEFT;
+		leftRightTracker.lastInputTime = currentTime;
+		break;
+	case GAMEPAD_MASK_RIGHT:
+		newDpad |= GAMEPAD_MASK_RIGHT;
+		leftRightTracker.lastDirection = DIRECTION_RIGHT;
+		leftRightTracker.lastInputTime = currentTime;
+		break;
+	default:
+		leftRightTracker.lastDirection = DIRECTION_NONE;
+		break;
 	}
 
 	return newDpad;
