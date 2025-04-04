@@ -34,12 +34,16 @@ bool Storage::save()
  * @brief Save the config; if forcing a save is requested, or if USB host is not enabled, this will write to flash.
  */
 bool Storage::save(const bool force) {
-	if (!PeripheralManager::getInstance().isUSBEnabled(0) || force) {
-		return ConfigUtils::save(config);
-	} else {
-		return false;
-	}
+    // 웹 설정 모드일 경우 강제 저장 허용
+    bool isWebConfigMode = GetConfigMode();
+    
+    if (isWebConfigMode || !PeripheralManager::getInstance().isUSBEnabled(0) || force) {
+        return ConfigUtils::save(config);
+    } else {
+        return false;
+    }
 }
+
 
 void Storage::ResetSettings()
 {
